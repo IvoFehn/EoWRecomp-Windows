@@ -1,0 +1,242 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: Build and test the complete release payload
+        type: boolean
+        default: false
+      publish_release:
+        description: Publish a release for the selected existing version tag
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows-ucrt64:
+    name: Windows x64 (UCRT64)
+    runs-on: windows-2025
+    timeout-minutes: 75
+    outputs:
+      launcher_sha256: ${{ steps.single-file.outputs.launcher_sha256 }}
+      sources_sha256: ${{ steps.single-file.outputs.sources_sha256 }}
+
+    steps:
+      - name: Validate release tag
+        if: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$') {
+            throw 'Select an existing version tag such as v1.2.3 or v1.2.3-rc.1.'
+          }
+
+      - name: Preserve LF line endings
+        run: git config --global core.autocrlf false
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.10'
+
+      - name: Check source and test the package validator
+        run: |
+          python -B tools/windows/verify_source_tree.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B tools/windows/test_validate_package.py
+
+      - name: Set up MSYS2 UCRT64
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: true
+          cache: false
+          install: >-
+            curl
+            diffutils
+            git
+            make
+            nasm
+            unzip
+            zstd
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-clang
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-sdl3
+            mingw-w64-ucrt-x86_64-ffmpeg
+            mingw-w64-ucrt-x86_64-vulkan-devel
+            mingw-w64-ucrt-x86_64-shaderc
+            mingw-w64-ucrt-x86_64-spirv-tools
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-vulkan-memory-allocator
+
+      - name: Build the Windows runtime without guest code
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          test "$MSYSTEM" = UCRT64
+          evidence="$(cygpath -u "$RUNNER_TEMP")/windows-build-evidence"
+          mkdir "$evidence" ci-generated-empty ci-build
+
+          pacman -Q | tee "$evidence/packages.txt"
+          clang --version | tee "$evidence/compiler.txt"
+          bash tools/fetch_zig.sh
+          build/zig/zig.exe version | tee "$evidence/zig.txt"
+
+          make -j2 RELEASE=1 B=ci-build GEN=ci-generated-empty \
+            GENARCH=-march=x86-64-v3 ZIG=build/zig/zig.exe all 2>&1 | tee "$evidence/build.log"
+
+          test -z "$(find ci-generated-empty -mindepth 1 -print -quit)"
+          test -z "$(find ci-build build -iname 'eowgame*' -print -quit)"
+          test -s ci-build/eowrecomp.exe
+          test -s ci-build/eowrecomp.dll.a
+          objdump -f ci-build/eowrecomp.exe | tee "$evidence/pe-format.txt"
+          grep -F 'file format pei-x86-64' "$evidence/pe-format.txt"
+          objdump -p ci-build/eowrecomp.exe > "$evidence/pe-imports.txt"
+          sha256sum ci-build/eowrecomp.exe ci-build/eowrecomp.dll.a > "$evidence/output-sha256.txt"
+
+      - name: Compile the single-file bootstrap
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          clang -fuse-ld=lld -municode -mwindows -O2 -Wall -Wextra -Werror \
+            -o ci-build/bootstrap.exe tools/windows/bootstrap.c -lbcrypt -lshell32 -luser32
+          objdump -f ci-build/bootstrap.exe | grep -F 'file format pei-x86-64'
+
+      - name: Test single-file extraction and corruption handling
+        run: python -B tools/windows/test_release_bootstrap.py --bootstrap ci-build/bootstrap.exe
+
+      - name: Build and audit the complete distributable payload
+        if: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && (inputs.build_release || inputs.publish_release)) }}
+        shell: msys2 {0}
+        env:
+          EOW_CI_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          evidence="$(cygpath -u "$RUNNER_TEMP")/windows-build-evidence"
+          bash tools/windows/build_release_payload.sh "$PWD/ci-release" "$(cygpath -u "$EOW_CI_PYTHON")" \
+            2>&1 | tee "$evidence/payload-build.log"
+
+      - name: Build and verify the release EXE
+        id: single-file
+        if: ${{ (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && (inputs.build_release || inputs.publish_release)) }}
+        run: |
+          $release = Join-Path $env:RUNNER_TEMP 'windows-release'
+          New-Item -ItemType Directory -Path $release -ErrorAction Stop | Out-Null
+          $exe = Join-Path $release 'EoWRecomp.exe'
+          $manifest = 'ci-release/manifest.json'
+          $validation = Get-Content -LiteralPath 'ci-release/validation.json' -Raw | ConvertFrom-Json
+          $provenance = Get-Content -LiteralPath 'ci-release/provenance.json' -Raw | ConvertFrom-Json
+          if ($validation.result -cne 'pass' -or $validation.extraction_verified -ne $true -or
+              $validation.archive_sha256 -notmatch '^[0-9a-f]{64}$' -or $validation.manifest_sha256 -notmatch '^[0-9a-f]{64}$' -or
+              $validation.archive_sha256 -cne $provenance.archive_sha256 -or
+              $validation.manifest_sha256 -cne $provenance.manifest_sha256 -or
+              $provenance.source_revision -cne $env:GITHUB_SHA) {
+            throw 'The release payload is missing its completed audit or archive identity.'
+          }
+          python -B tools/windows/build_single_exe.py --bootstrap ci-build/bootstrap.exe `
+              --zip ci-release/EoWRecomp-Windows-x64-v3.zip --manifest $manifest --output $exe `
+              --zip-sha256 $validation.archive_sha256 --manifest-sha256 $validation.manifest_sha256
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B tools/windows/test_release_bootstrap.py --single-exe $exe --manifest $manifest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $sources = Join-Path $release 'corresponding-sources.zip'
+          Copy-Item -LiteralPath 'ci-release/corresponding-sources.zip' -Destination $sources -ErrorAction Stop
+          $exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sourceHash = (Get-FileHash -LiteralPath $sources -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sourceHash -cne $provenance.corresponding_sources_sha256) {
+            throw 'The corresponding sources archive does not match its audited bytes.'
+          }
+          "launcher_sha256=$exeHash" >> $env:GITHUB_OUTPUT
+          "sources_sha256=$sourceHash" >> $env:GITHUB_OUTPUT
+          $evidence = Join-Path $env:RUNNER_TEMP 'windows-build-evidence'
+          Copy-Item -LiteralPath 'ci-release/manifest.json','ci-release/validation.json','ci-release/provenance.json' `
+              -Destination $evidence -ErrorAction Stop
+
+      - name: Upload the verified release files
+        if: ${{ steps.single-file.outputs.launcher_sha256 != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-windows-release
+          path: |
+            ${{ runner.temp }}/windows-release/EoWRecomp.exe
+            ${{ runner.temp }}/windows-release/corresponding-sources.zip
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 1
+
+      - name: Upload Windows build evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-ucrt64-build-evidence
+          path: ${{ runner.temp }}/windows-build-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish-windows-release:
+    name: Publish the verified Windows release
+    if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_release)) }}
+    needs: windows-ucrt64
+    runs-on: windows-2025
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: windows-release-${{ github.ref }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Download the verified release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verified-windows-release
+          path: ${{ runner.temp }}/verified-windows-release
+
+      - name: Publish the single Windows download and corresponding source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAUNCHER_SHA256: ${{ needs.windows-ucrt64.outputs.launcher_sha256 }}
+          SOURCES_SHA256: ${{ needs.windows-ucrt64.outputs.sources_sha256 }}
+        run: |
+          $release = Join-Path $env:RUNNER_TEMP 'verified-windows-release'
+          $exe = Join-Path $release 'EoWRecomp.exe'
+          $sources = Join-Path $release 'corresponding-sources.zip'
+          if ($env:LAUNCHER_SHA256 -notmatch '^[0-9a-f]{64}$' -or $env:SOURCES_SHA256 -notmatch '^[0-9a-f]{64}$' -or
+              (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ne $env:LAUNCHER_SHA256 -or
+              (Get-FileHash -LiteralPath $sources -Algorithm SHA256).Hash -ne $env:SOURCES_SHA256) {
+            throw 'The release artifacts do not match the verified build.'
+          }
+          $tag = $env:GITHUB_REF_NAME
+          $tagCommit = gh api "repos/$env:GITHUB_REPOSITORY/commits/$tag" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -cne $env:GITHUB_SHA) {
+            throw 'The remote version tag does not identify the verified commit.'
+          }
+          $url = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/releases/download/$tag"
+          $candidateNote = if ($tag.Contains('-')) { 'This is a test build. Local game setup and gameplay verification are still in progress.' } else { '' }
+          $notes = @"
+          Download [EoWRecomp.exe]($url/EoWRecomp.exe) for Windows x64 (AVX2/FMA). Use your own game files for local setup.
+
+          $candidateNote
+
+          [Corresponding source code for redistributed dependencies]($url/corresponding-sources.zip)
+
+          EoWRecomp.exe SHA-256: $env:LAUNCHER_SHA256
+          "@
+          $releaseArgs = @('release', 'create', $tag, $exe, $sources, '--repo', $env:GITHUB_REPOSITORY,
+              '--verify-tag', '--title', "EoWRecomp $tag", '--notes', $notes)
+          if ($tag.Contains('-')) { $releaseArgs += '--prerelease' }
+          gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
