@@ -2,6 +2,8 @@
 
 This build targets Windows 10 (1903 or later) and Windows 11 on an x86-64-v3 CPU with operating system support for AVX. Install a graphics driver with Vulkan support. Use a writable folder with at least 12 GB free for first setup.
 
+Dump the 1.0.0 base game yourself from your own cartridge or your own legally purchased digital copy. Extract `prod.keys` from your own Nintendo Switch and keep both files private.
+
 1. Put **EoWRecomp.exe** beside your own base game dump of **The Legend of Zelda: Echoes of Wisdom 1.0.0** (`.nsp` or `.xci`) and your Switch's `prod.keys`.
 2. Open **EoWRecomp.exe**. It selects the folder if it finds a game package there. Use **Game files folder** to choose another location or a folder containing your extracted `exefs` and `romfs`.
 3. Select **Set up game files**. The launcher builds the native game library on your PC. The first build can take a while.

@@ -1,21 +1,49 @@
 # EoWRecomp for Windows
 
-EoWRecomp for Windows statically recompiles *The Legend of Zelda: Echoes of Wisdom* into native x86-64-v3 code on your PC and renders with Vulkan.
+Play your own copy of *The Legend of Zelda: Echoes of Wisdom* on Windows. EoWRecomp converts the game code into native x86-64 code on your PC and renders it with Vulkan.
 
-## Get started
+[![Windows build](https://github.com/IvoFehn/EoWRecomp-Windows/actions/workflows/windows.yml/badge.svg?branch=main)](https://github.com/IvoFehn/EoWRecomp-Windows/actions/workflows/windows.yml)
 
-1. Download **EoWRecomp.exe** from [Releases](../../releases) when a Windows build is available.
-2. Put the EXE beside your own base game dump of *Echoes of Wisdom* **1.0.0** (`.nsp` or `.xci`) and your Switch's `prod.keys`.
-3. Open the EXE and select **Set up game files**. The launcher builds the game library locally. Select **Play** when setup finishes.
+**[⬇️ Download EoWRecomp.exe](https://github.com/IvoFehn/EoWRecomp-Windows/releases)** · [Windows setup guide](docs/WINDOWS-START.md)
 
-You need 64-bit Windows 10 (1903 or later) or Windows 11, an x86-64-v3 CPU with AVX2, and a Vulkan-capable graphics driver. Use a writable folder with at least 12 GB free for first setup. The EXE unpacks its runtime beside itself and keeps generated files and saves in `EoWRecomp-data`. See the [Windows setup guide](docs/WINDOWS-START.md) for details.
+> [!NOTE]
+> This is a release candidate. The Windows features below passed targeted tests on earlier builds. Full game setup and frame pacing for this candidate are still being checked.
 
-## Build and verification
+## 🚀 Quick start
 
-The Windows port is under test. GitHub Actions builds the native launcher with an empty generated-code directory and checks the single-file bootstrap with synthetic data. The [Windows build guide](docs/BUILD-windows.md) covers developer builds. Game setup and gameplay require a local copy of the game.
+> [!IMPORTANT]
+> Dump the **1.0.0 base game** yourself from your own cartridge or your own legally purchased digital copy. Extract `prod.keys` from your own Nintendo Switch. Keep your dump and keys private.
 
-## Credits and license
+1. Download **EoWRecomp.exe** from Releases and put it in a writable folder with your game dump (`.nsp` or `.xci`) and `prod.keys`.
+2. Open the EXE and click **Set up game files**. It detects the adjacent dump and builds the game library locally. The first build can take a while.
+3. Click **Play** when setup finishes. Keep your dump in its selected location while you play.
 
-This Windows project builds on [EoWRecomp](https://github.com/Nycolazs/EoWRecomp), [LAS Recomp](https://github.com/peiikai/LASRecomp) by Peiikai and its contributors, and [LASRecomp-Android-Plus](https://github.com/Nycolazs/LASRecomp-Android-Plus). The project code is licensed under [MIT](LICENSE). Third-party code, tools and fonts retain their own licenses. The release's corresponding source archive is provided separately for redistribution.
+```text
+Your folder/
+  EoWRecomp.exe
+  Echoes of Wisdom.nsp
+  prod.keys
+```
 
-This is an independent fan project. Nintendo owns the game and its trademarks. The repository contains source and licensed dependencies. It includes no game files, game keys, game screenshots, or generated game binaries.
+The EXE unpacks its runtime beside itself and saves your settings and progress in `EoWRecomp-data`. Game data, keys and generated game code stay on your PC.
+
+**Requirements** · 64-bit Windows 10 (1903+) or Windows 11 · x86-64-v3 CPU with AVX2 and FMA · Vulkan 1.3 graphics driver · 12 GB free for first setup
+
+## 🎮 Tested Windows features
+
+| Feature | What you can use |
+| :-- | :-- |
+| Frame rate | Auto with a 60 FPS target or the game's 30 FPS mode |
+| Display | Borderless fullscreen on a chosen monitor, 16:9 output with black bars or stretch |
+| Graphics | 1080p, 1440p, 1800p, 4K, 5K or window-size rendering, AMD FSR 1 or bilinear scaling, and SMAA |
+| Controls | Remappable keyboard and gamepad controls, optional left-click action, and Xbox, PlayStation, Steam Deck and keyboard button prompts |
+| Audio and console mode | Stereo with a selectable output device, plus Docked and Handheld modes applied on game start |
+| Shader cache | Setup prepares known shaders and the runtime reuses its local cache |
+
+Press **F1** for settings or **F10** for the performance overlay.
+
+## 🛠️ Build and credits
+
+GitHub Actions builds the launcher and checks the release EXE from a clean Windows checkout. The corresponding source and license notices for bundled dependencies are available on the release page. [Windows build guide](docs/BUILD-windows.md)
+
+This independent fan project builds on [EoWRecomp](https://github.com/Nycolazs/EoWRecomp), [LAS Recomp](https://github.com/peiikai/LASRecomp) and [LASRecomp-Android-Plus](https://github.com/Nycolazs/LASRecomp-Android-Plus). Project code is [MIT-licensed](LICENSE). Nintendo owns the game and its trademarks.
