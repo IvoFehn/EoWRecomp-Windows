@@ -210,8 +210,7 @@ def main():
             # game's code is valid ARMv8.0 - and one SIGILL ends the whole harness)
             if path == '--synth' and ins.kind == 'asm':
                 continue
-            # (Unicorn 2.1.4 compares LDSMAX / LDSMIN of 8 / 16 / 32 bits unsigned: those are checked against the CPU
-            # itself by tools/test_lse.c)
+            # Unicorn 2.1.4 treats 8-, 16- and 32-bit LDSMAX / LDSMIN comparisons as unsigned.
             if (w & 0x3F200C00) == 0x38200000 and bits(w, 15, 1) == 0 and bits(w, 12, 3) in (4, 5) and bits(w, 30, 2) < 3:
                 continue
             body = to_test_body(ins, pc)

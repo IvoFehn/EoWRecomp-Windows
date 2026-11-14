@@ -34,7 +34,7 @@ Version tags build a GitHub release. A tag with a suffix such as `-rc.1` creates
 Verify first-run game setup with a Windows system `PATH`. Keep game files, keys, generated libraries, saves and logs local. The Vulkan loader comes from the graphics driver.
 
 ## Tests
-- `tools/test_translate.sh`: shader translator fuzz and GLSL validation.
+- `bash tools/test_translate.sh 20000 8 glsl` fuzzes the shader translator and validates the generated GLSL.
 - `tools/test_vk_pipelines.sh`: fuzzed shaders through the backend's compile/reflection into real pipelines.
 - `EOWRECOMP_VK_VALIDATION=1` with `VK_ADD_LAYER_PATH` pointing at `C:\msys64\ucrt64\bin`: Khronos validation layer.
 - Run test windows directly, not under MSYS `timeout` (it stalls the window).

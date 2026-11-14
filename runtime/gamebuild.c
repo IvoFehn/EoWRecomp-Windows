@@ -123,7 +123,7 @@ typedef struct {
     char inc[1100], entry[1100], hle[1100];  // headers the game code includes, tools/gamelib_entry.c, HLE names
 #ifdef _WIN32
     char implib[1100];  // the .exe's import library (the runtime functions the game code calls)
-    char zig_rt[1100];  // the release's zig: its runtime built ahead of time (zig/rt, tools/zig_slim.sh), "" = none
+    char zig_rt[1100];  // optional prebuilt Zig runtime (zig/rt), "" = none
 #endif
 #ifdef __ANDROID__
     // the app's native library folder (programs run only from there: libeowpython.so, libzig.so; and libmain.so, to
